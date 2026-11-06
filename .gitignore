@@ -1,0 +1,14 @@
+# Runtime and editor artifacts
+node_modules/
+.pnpm-store/
+*.log
+*.bak
+
+# OS metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors
+.idea/
+.vscode/

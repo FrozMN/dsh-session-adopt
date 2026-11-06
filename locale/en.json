@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Session adopt",
+    "description": "Adopts sessions created outside this window, such as through an IDE ACP client, into their matching workspace. Adds a manual sync action to the sidebar."
+  }
+}

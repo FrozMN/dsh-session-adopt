@@ -1,0 +1,15 @@
+- insert:
+    - id: session-adopt
+      name: 'dsh-session-adopt'
+      config:
+        # Check recently active workspaces every two hours.
+        pollIntervalMs: 7200000
+        # A workspace is active while one of its session logs changed in the last six hours.
+        activeWindowMs: 21600000
+        # Create a Workspace when a discovered session's cwd has no registration yet.
+        autoCreateWorkspaces: true
+        # Subagent sessions belong to their parent conversation, not the session tree.
+        includeSubagents: false
+        # One full scan after the plugin mounts, so pre-existing IDE sessions appear without a restart.
+        startupScan: true
+        startupDelayMs: 2500

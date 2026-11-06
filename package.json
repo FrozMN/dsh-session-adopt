@@ -1,0 +1,62 @@
+{
+  "name": "dsh-session-adopt",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Find sessions created outside the running DSH window (for example through an IDE ACP client) and adopt them into their matching Workspace, with manual and scheduled sync.",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "workspace",
+    "session",
+    "acp",
+    "ide"
+  ],
+  "license": "MIT",
+  "author": "FrozMN",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FrozMN/dsh-session-adopt.git"
+  },
+  "homepage": "https://github.com/FrozMN/dsh-session-adopt#readme",
+  "bugs": {
+    "url": "https://github.com/FrozMN/dsh-session-adopt/issues"
+  },
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "README.zh.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "check": "node --check index.js && node --check client.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-api-workspace-controller",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    }
+  }
+}
