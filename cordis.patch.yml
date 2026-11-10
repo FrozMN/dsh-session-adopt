@@ -13,3 +13,9 @@
         # One full scan after the plugin mounts, so pre-existing IDE sessions appear without a restart.
         startupScan: true
         startupDelayMs: 2500
+        # Offer cross-harness session detection and import (sidebar dialog + routes).
+        importEnabled: true
+        # Upper bound on normalized messages one imported session may carry.
+        maxMessages: 4000
+        # Upper bound on candidates returned to the client per scan.
+        maxCandidates: 500

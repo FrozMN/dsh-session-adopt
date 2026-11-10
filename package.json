@@ -1,8 +1,7 @@
 {
   "name": "dsh-session-adopt",
-  "version": "0.1.0",
-  "private": true,
-  "description": "Find sessions created outside the running DSH window (for example through an IDE ACP client) and adopt them into their matching Workspace, with manual and scheduled sync.",
+  "version": "0.2.0",
+  "description": "Find sessions created outside the running DSH window (for example through an IDE ACP client) and adopt them into their matching Workspace. Also detects sessions from other local agent harnesses (pi, Claude Code, Codex, Gemini CLI, OpenCode), imports them as native DSH sessions, and files them into the matching or a new Workspace, with manual and scheduled sync.",
   "keywords": [
     "deepseek-harness",
     "dsh",
@@ -10,7 +9,12 @@
     "workspace",
     "session",
     "acp",
-    "ide"
+    "ide",
+    "import",
+    "pi",
+    "claude-code",
+    "codex",
+    "migration"
   ],
   "license": "MIT",
   "author": "FrozMN",
@@ -33,6 +37,7 @@
     "index.js",
     "client.js",
     "cordis.patch.yml",
+    "import",
     "locale/*.json",
     "icon.svg",
     "README.md",
@@ -41,7 +46,8 @@
     "LICENSE"
   ],
   "scripts": {
-    "check": "node --check index.js && node --check client.js"
+    "check": "node --check index.js && node --check client.js && node --check import/index.js && node --check import/registry.js && node --check import/events.js && node --check import/ids.js && node --check import/adapters/index.js && node --check import/adapters/pi.js",
+    "test": "node --test test/*.test.mjs import/adapters/*.test.mjs"
   },
   "dsh": {
     "bundle": {

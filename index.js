@@ -14,6 +14,9 @@
  * The bundle deliberately has no package dependencies: only Node built-ins.
  */
 import { realpath, stat } from 'node:fs/promises'
+import { loadAdapters } from './import/adapters/index.js'
+import { SessionImportService } from './import/index.js'
+import { ImportError } from './import/registry.js'
 
 /** @typedef {'startup' | 'periodic' | 'manual' | 'focus'} ScanTrigger */
 
@@ -35,11 +38,22 @@ const DEFAULT_OPTIONS = {
   startupScan: true,
   /** Delay before that first scan, letting the rest of the composition settle. */
   startupDelayMs: 2500,
+  /** Offer cross-harness session detection/import routes and the sidebar dialog. */
+  importEnabled: true,
+  /** Upper bound on normalized messages one imported session may carry. */
+  maxMessages: 4000,
+  /** Upper bound on candidates returned to the client per scan (the cache keeps all). */
+  maxCandidates: 500,
 }
 
 const SCAN_PATH = '/session-adopt/scan'
 const STATUS_PATH = '/session-adopt/status'
+const IMPORT_SOURCES_PATH = '/session-import/sources'
+const IMPORT_SCAN_PATH = '/session-import/scan'
+const IMPORT_IMPORT_PATH = '/session-import/import'
+const IMPORT_STATUS_PATH = '/session-import/status'
 const MAX_BODY_BYTES = 16 * 1024
+const MAX_IMPORT_BODY_BYTES = 64 * 1024
 const MAX_REPORTED_ITEMS = 25
 const LIST_CONCURRENCY = 16
 
@@ -47,7 +61,7 @@ const LIST_CONCURRENCY = 16
 export const name = 'session-adopt'
 
 /** Services this Host half needs before it can observe sessions and attach them. */
-export const inject = ['webServer', 'connection', 'sessionPersistence', 'workspaceRegistry']
+export const inject = ['webServer', 'connection', 'sessionPersistence', 'workspaceRegistry', 'sessions']
 
 /**
  * Read one positive duration from configuration, clamped to a usable minimum.
@@ -76,6 +90,9 @@ function readOptions(config) {
     includeSubagents: source.includeSubagents === true,
     startupScan: source.startupScan !== false,
     startupDelayMs: duration(source.startupDelayMs, DEFAULT_OPTIONS.startupDelayMs, 0),
+    importEnabled: source.importEnabled !== false,
+    maxMessages: duration(source.maxMessages, DEFAULT_OPTIONS.maxMessages, 1),
+    maxCandidates: duration(source.maxCandidates, DEFAULT_OPTIONS.maxCandidates, 1),
   }
 }
 
@@ -126,18 +143,53 @@ function sendMethodNotAllowed(res, allow) {
  * @param {import('node:http').IncomingMessage} req request stream.
  * @returns {Promise<string | null>} UTF-8 body, or null past the ceiling.
  */
-async function readBoundedBody(req) {
+async function readBoundedBody(req, maxBytes = MAX_BODY_BYTES) {
   const chunks = []
   let size = 0
   for await (const chunk of req) {
     size += chunk.byteLength
-    if (size > MAX_BODY_BYTES) {
+    if (size > maxBytes) {
       req.resume()
       return null
     }
     chunks.push(chunk)
   }
   return Buffer.concat(chunks, size).toString('utf8')
+}
+
+/**
+ * Read one JSON request body with a byte ceiling, answering failures directly.
+ *
+ * `content-type`, body size, and JSON syntax are checked here so every route
+ * shares the same rejection language; the returned value is the parsed body or
+ * undefined after a response has already been written.
+ * @param {import('node:http').IncomingMessage} req request stream.
+ * @param {import('node:http').ServerResponse} res response owner.
+ * @param {number} [maxBytes] hard byte ceiling.
+ * @returns {Promise<unknown | undefined>} parsed body, or undefined when answered.
+ */
+async function readJsonBody(req, res, maxBytes = MAX_BODY_BYTES) {
+  if (String(req.headers['content-type']).split(';', 1)[0]?.trim().toLowerCase() !== 'application/json') {
+    sendJson(res, 415, { ok: false, error: { message: 'content-type must be application/json' } })
+    return undefined
+  }
+  let text
+  try {
+    text = await readBoundedBody(req, maxBytes)
+  } catch (error) {
+    sendJson(res, 400, { ok: false, error: { message: `request body unreadable: ${messageOf(error)}` } })
+    return undefined
+  }
+  if (text === null) {
+    sendJson(res, 413, { ok: false, error: { message: 'request body is too large' } })
+    return undefined
+  }
+  try {
+    return text === '' ? {} : JSON.parse(text)
+  } catch {
+    sendJson(res, 400, { ok: false, error: { message: 'request body must be valid JSON' } })
+    return undefined
+  }
 }
 
 /**
@@ -183,6 +235,41 @@ export function apply(ctx, config) {
   let scanTail = Promise.resolve()
   /** Next scheduled periodic scan, for the status surface. */
   let nextScheduledScanAt = Date.now() + options.pollIntervalMs
+  /** Lazily loaded harness adapters plus the cross-harness import service. */
+  let importServicePromise = null
+  /**
+   * Resolve the import service once per plugin lifetime.
+   * @returns {Promise<SessionImportService>} the import service.
+   */
+  const importService = () => {
+    importServicePromise ??= loadAdapters().then(({ adapters, errors }) => {
+      for (const failure of errors) {
+        ctx.logger.warn(`session-adopt: adapter module "${failure.module}" unavailable: ${failure.message}`)
+      }
+      return new SessionImportService({
+        ctx,
+        adapters,
+        options: {
+          importEnabled: options.importEnabled,
+          maxMessages: options.maxMessages,
+          maxCandidates: options.maxCandidates,
+        },
+      })
+    })
+    return importServicePromise
+  }
+  /**
+   * Answer one import-route failure with its stable code.
+   * @param {import('node:http').ServerResponse} res response owner.
+   * @param {unknown} error thrown value.
+   */
+  const sendImportError = (res, error) => {
+    const code = error instanceof ImportError ? error.code : 'internal-error'
+    sendJson(res, code === 'invalid-request' ? 400 : 500, {
+      ok: false,
+      error: { code, message: messageOf(error) },
+    })
+  }
 
   /**
    * Run one scan and publish its summary through {@link lastScan}.
@@ -525,6 +612,114 @@ export function apply(ctx, config) {
     `session-adopt: GET ${STATUS_PATH}`,
   )
 
+  ctx.effect(
+    () => ctx.webServer.register({
+      kind: 'exact',
+      path: IMPORT_SOURCES_PATH,
+      handler: async (req, res) => {
+        if (rejected(req, res)) return
+        if (req.method !== 'GET') {
+          sendMethodNotAllowed(res, 'GET')
+          return
+        }
+        if (!options.importEnabled) {
+          sendJson(res, 503, { ok: false, error: { code: 'disabled', message: 'cross-harness session import is disabled' } })
+          return
+        }
+        try {
+          const sources = await (await importService()).sources()
+          sendJson(res, 200, { ok: true, ...sources })
+        } catch (error) {
+          sendImportError(res, error)
+        }
+      },
+    }),
+    `session-adopt: GET ${IMPORT_SOURCES_PATH}`,
+  )
+
+  ctx.effect(
+    () => ctx.webServer.register({
+      kind: 'exact',
+      path: IMPORT_SCAN_PATH,
+      handler: async (req, res) => {
+        if (rejected(req, res)) return
+        if (req.method !== 'POST') {
+          sendMethodNotAllowed(res, 'POST')
+          return
+        }
+        if (!options.importEnabled) {
+          sendJson(res, 503, { ok: false, error: { code: 'disabled', message: 'cross-harness session import is disabled' } })
+          return
+        }
+        const body = await readJsonBody(req, res)
+        if (body === undefined) return
+        if (body !== null && typeof body === 'object' && body.adapterIds !== undefined && !Array.isArray(body.adapterIds)) {
+          sendJson(res, 400, { ok: false, error: { code: 'invalid-request', message: 'adapterIds must be an array when present' } })
+          return
+        }
+        try {
+          const service = await importService()
+          const scan = await service.scan({
+            adapterIds: Array.isArray(body?.adapterIds) ? body.adapterIds.filter((id) => typeof id === 'string') : undefined,
+          })
+          sendJson(res, 200, { ok: true, scan })
+        } catch (error) {
+          sendImportError(res, error)
+        }
+      },
+    }),
+    `session-adopt: POST ${IMPORT_SCAN_PATH}`,
+  )
+
+  ctx.effect(
+    () => ctx.webServer.register({
+      kind: 'exact',
+      path: IMPORT_IMPORT_PATH,
+      handler: async (req, res) => {
+        if (rejected(req, res)) return
+        if (req.method !== 'POST') {
+          sendMethodNotAllowed(res, 'POST')
+          return
+        }
+        if (!options.importEnabled) {
+          sendJson(res, 503, { ok: false, error: { code: 'disabled', message: 'cross-harness session import is disabled' } })
+          return
+        }
+        const body = await readJsonBody(req, res, MAX_IMPORT_BODY_BYTES)
+        if (body === undefined) return
+        try {
+          const service = await importService()
+          const result = await service.importSelections(body)
+          sendJson(res, 200, { ok: true, result })
+        } catch (error) {
+          sendImportError(res, error)
+        }
+      },
+    }),
+    `session-adopt: POST ${IMPORT_IMPORT_PATH}`,
+  )
+
+  ctx.effect(
+    () => ctx.webServer.register({
+      kind: 'exact',
+      path: IMPORT_STATUS_PATH,
+      handler: async (req, res) => {
+        if (rejected(req, res)) return
+        if (req.method !== 'GET') {
+          sendMethodNotAllowed(res, 'GET')
+          return
+        }
+        try {
+          const service = await importService()
+          sendJson(res, 200, { ok: true, ...service.status() })
+        } catch (error) {
+          sendImportError(res, error)
+        }
+      },
+    }),
+    `session-adopt: GET ${IMPORT_STATUS_PATH}`,
+  )
+
   ctx.effect(() => {
     if (!options.startupScan) return () => {}
     const timer = setTimeout(() => {
@@ -549,7 +744,7 @@ export function apply(ctx, config) {
   }, 'session-adopt: periodic scan')
 
   ctx.logger.info(
-    `session-adopt: active; checking active workspaces every ${Math.round(options.pollIntervalMs / 60000)} minute(s)` +
+    `session-adopt: active; cross-harness import ${options.importEnabled ? 'enabled' : 'disabled'}; checking active workspaces every ${Math.round(options.pollIntervalMs / 60000)} minute(s)` +
       ` and treating the last ${Math.round(options.activeWindowMs / 3600000)} hour(s) as active`,
   )
 }

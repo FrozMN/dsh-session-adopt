@@ -1,14 +1,54 @@
-# Runtime and editor artifacts
+# Dependencies and package-manager state
 node_modules/
 .pnpm-store/
+.pnpm/
+.npm/
+.yarn/
+package-lock.json
+pnpm-lock.yaml
+
+# Runtime, build and coverage artifacts
 *.log
 *.bak
+*.tmp
+*.tgz
+dist/
+build/
+out/
+coverage/
+.nyc_output/
+
+# Local environment and secrets — never commit these
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*
+secrets*
+*.secret
+!src/**/*.key.example
+
+# Local Harness / plugin development state
+.dsh/
+.dsh-home/
+.session-adopt-dev/
+*.zstd
+
+# Session logs and transcripts (can contain private conversation data)
+*.jsonl
+*.jsonl.zst
+!test/fixtures/**/*.jsonl
 
 # OS metadata
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# Editors
+# Editors and tooling
 .idea/
 .vscode/
+*.swp
+*.swo
+.history/

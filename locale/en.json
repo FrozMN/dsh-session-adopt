@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Session adopt",
-    "description": "Adopts sessions created outside this window, such as through an IDE ACP client, into their matching workspace. Adds a manual sync action to the sidebar."
+    "description": "Adopts sessions created outside this window, such as through an IDE ACP client, into their matching workspace, and imports sessions from other local agent harnesses (for example pi) through a sidebar dialog. Adds sync and import actions to the sidebar."
   }
 }
