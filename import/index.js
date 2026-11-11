@@ -14,6 +14,7 @@
  * - a failure never aborts the remaining selections.
  */
 import { realpath, stat } from 'node:fs/promises'
+import { isAbsolute } from 'node:path'
 import { buildSessionArtifact, DEFAULT_MAX_MESSAGES, ImportBuildError } from './events.js'
 import { importedSessionId } from './ids.js'
 import { ImportError, ImportRegistry, messageOf } from './registry.js'
@@ -40,7 +41,7 @@ function workspaceChoice(value) {
   }
   if (value.kind === 'new') {
     if (value.cwd === undefined) return { kind: 'new' }
-    if (typeof value.cwd !== 'string' || !value.cwd.startsWith('/')) {
+    if (typeof value.cwd !== 'string' || !isAbsolute(value.cwd)) {
       throw new ImportError('invalid-request', 'workspace.cwd must be an absolute path')
     }
     return { kind: 'new', cwd: value.cwd }
@@ -366,7 +367,7 @@ export class SessionImportService {
    * @returns {Promise<string | undefined>} canonical path, or undefined.
    */
   async #canonicalCwd(path) {
-    if (typeof path !== 'string' || !path.startsWith('/')) return undefined
+    if (typeof path !== 'string' || !isAbsolute(path)) return undefined
     try {
       const canonical = await realpath(path)
       return (await stat(canonical)).isDirectory() ? canonical : undefined

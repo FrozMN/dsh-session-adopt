@@ -2,6 +2,52 @@
 
 All notable changes to this project are documented here.
 
+## 0.3.1 — 2026-11-12
+
+Scan clean-up and documentation accuracy.
+
+### Fixed
+
+- **Empty chat shells are no longer listed.** A Copilot session file created by opening the chat without
+  sending a request contains no conversation; it appeared in the import dialog but could only fail with
+  `empty-session`. Such files are now omitted from a scan.
+- The Copilot scan-cost and adapter-test notes describe the behavior without quoting numbers from one
+  particular development environment.
+
+## 0.3.0 — 2026-11-11
+
+VS Code Copilot import, and cross-platform path handling.
+
+### Added
+
+- **`copilot` adapter**: detects and imports GitHub Copilot Chat sessions stored by VS Code.
+  Reads `User/workspaceStorage/<id>/chatSessions/` for every VS Code variant (stable, Insiders,
+  VSCodium, Code - OSS) plus the folder-less `globalStorage/emptyWindowChatSessions`; the session's
+  working directory comes from that workspace's `workspace.json`, so imports land in the Workspace the
+  user had open. `COPILOT_USER_DATA_DIR` / `VSCODE_USER_DATA_DIR` override the search.
+- **Operation-log replay** for the append-only `.jsonl` chat format introduced by
+  microsoft/vscode#286644 (VS Code ~1.109 / Insiders): `kind 0` snapshot, `kind 1` set, `kind 2`
+  push/splice, `kind 3` delete, identical to `objectMutationLog.ts`. Legacy single-file `.json`
+  sessions are read too.
+- Transcript mapping for the Copilot response parts: streamed markdown fragments merge into one text
+  block, `thinking` becomes reasoning, `toolInvocationSerialized` becomes a paired
+  `tool-call`/`tool` message (structured `resultDetails` output, captured terminal output with escape
+  sequences stripped, or the past-tense summary), answered `questionCarousel` prompts are kept as
+  text; progress markers, `codeblockUri`, `undoStop`, MCP-server and edit-group parts are dropped.
+- Tests: 15 synthetic-fixture tests (replay semantics, workspace mapping, transcript mapping, forged
+  and escaping keys, truncated logs, legacy files) plus a real-store integration test that lists and
+  reads local Copilot sessions when a store is present.
+
+### Fixed
+
+- **Windows support for cross-harness import.** The host rejected every Windows working directory
+  because candidate paths were validated with `startsWith('/')`; absolute-path checks now use
+  `path.isAbsolute` in `import/events.js`, `import/index.js` and `import/registry.js`, and a new
+  Workspace title is derived with `path.basename` instead of splitting on `/`. Before this change a
+  scan reported every session as `cwd-unresolved` on Windows and every import failed with
+  `missing-cwd`.
+- The adapter tests no longer assume POSIX paths.
+
 ## 0.2.0 — 2026-11-10
 
 Cross-harness session import.

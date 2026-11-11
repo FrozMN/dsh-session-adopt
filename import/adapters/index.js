@@ -11,7 +11,7 @@
 import os from 'node:os'
 
 /** Built-in adapter modules, imported lazily and tolerated when absent. */
-const BUILTIN_MODULES = ['./pi.js', './claude-code.js', './codex.js', './gemini.js', './opencode.js']
+const BUILTIN_MODULES = ['./pi.js', './copilot.js', './claude-code.js', './codex.js', './gemini.js', './opencode.js']
 
 /** Functions every adapter module must export. */
 const REQUIRED_FUNCTIONS = ['available', 'listSessions', 'readSession']

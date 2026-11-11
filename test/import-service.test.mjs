@@ -11,7 +11,7 @@
 import assert from 'node:assert/strict'
 import { mkdtempSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, isAbsolute, join } from 'node:path'
 import test from 'node:test'
 
 import { SessionImportService } from '../import/index.js'
@@ -66,7 +66,7 @@ function mockHost(options = {}) {
       // Mirror the shape constraints the installed Session restore enforces.
       if (typeof id !== 'string' || id === '') throw new Error('bad id')
       if (!Array.isArray(seed)) throw new Error('bad seed')
-      if (typeof meta?.cwd !== 'string' || !meta.cwd.startsWith('/')) throw new Error('bad cwd')
+      if (typeof meta?.cwd !== 'string' || !isAbsolute(meta.cwd)) throw new Error('bad cwd')
       seed.forEach((event, index) => {
         if (event.seq !== index) throw new Error('non-contiguous seed')
         if (event.type === 'user/message' && event.surfaceOp !== 'append') throw new Error('surface marker missing')
@@ -87,7 +87,7 @@ function mockHost(options = {}) {
       const workspace = {
         id: `ws-${++workspaceCounter}`,
         path,
-        title: path.split('/').filter(Boolean).at(-1) ?? path,
+        title: basename(path) || path,
         sessionIds: [],
         async attachSession(sessionId) {
           const record = stored.get(sessionId)

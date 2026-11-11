@@ -57,7 +57,7 @@ window.__ModuleLoader__.load({
 
       'import.action.label': 'Import sessions',
       'import.action.title':
-        'Import sessions from other agent harnesses (for example pi) into a matching workspace.',
+        'Import sessions from other agent harnesses (pi, VS Code Copilot) into a matching workspace.',
       'import.dialog.title': 'Import external sessions',
       'import.dialog.subtitle':
         'Copy sessions from other agent harnesses into DSH. Their original files are never modified.',
@@ -125,7 +125,7 @@ window.__ModuleLoader__.load({
       'action.refreshing': '正在刷新会话列表…',
 
       'import.action.label': '导入会话',
-      'import.action.title': '把其他智能体工具（例如 pi）中的会话导入到对应工作区。',
+      'import.action.title': '把其他智能体工具（例如 pi、VS Code Copilot）中的会话导入到对应工作区。',
       'import.dialog.title': '导入外部会话',
       'import.dialog.subtitle': '把其他智能体工具中的会话复制到 DSH；原始文件不会被修改。',
       'import.dialog.close': '关闭对话框',

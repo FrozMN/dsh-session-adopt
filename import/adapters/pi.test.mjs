@@ -14,7 +14,7 @@
 import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import test from 'node:test'
 import { available, id, listSessions, readSession, title } from './pi.js'
 
@@ -194,11 +194,11 @@ function assertCandidateShape(candidate) {
   assert.ok(candidate.key.startsWith('pi:'), `candidate key is prefixed with pi: (${candidate.key})`)
   const decoded = Buffer.from(candidate.key.slice(3), 'base64url').toString('utf8')
   assert.ok(decoded !== '')
-  assert.ok(!decoded.startsWith('/'))
+  assert.ok(!isAbsolute(decoded))
   assert.ok(!decoded.split('/').includes('..'))
   assert.equal(typeof candidate.foreignId, 'string')
   assert.equal(typeof candidate.title, 'string')
-  assert.ok(candidate.cwd === '' || candidate.cwd.startsWith('/'), 'cwd is absolute when present')
+  assert.ok(candidate.cwd === '' || isAbsolute(candidate.cwd), 'cwd is absolute when present')
   assert.ok(Number.isFinite(candidate.createdAt))
   assert.ok(Number.isFinite(candidate.updatedAt))
   assert.ok(Number.isInteger(candidate.messageCount))
@@ -218,7 +218,7 @@ function assertNormalizedSession(session, options) {
   const requireToolCallMatch = options?.requireToolCallMatch !== false
   assert.equal(typeof session.foreignId, 'string')
   assert.equal(typeof session.title, 'string')
-  assert.ok(session.cwd.startsWith('/'), 'normalized cwd is absolute')
+  assert.ok(isAbsolute(session.cwd), 'normalized cwd is absolute')
   assert.ok(Number.isFinite(session.createdAt))
   assert.ok(Number.isFinite(session.updatedAt))
   assert.ok(session.provider === null || typeof session.provider === 'string')
@@ -272,7 +272,7 @@ test('available() reports a missing store lazily without walking directories', a
   const status = await available({ home: dir, env: {}, platform: process.platform })
   assert.equal(status.available, false)
   assert.ok(status.roots.length >= 1)
-  assert.ok(status.roots.every((root) => root.startsWith('/')))
+  assert.ok(status.roots.every((root) => isAbsolute(root)))
   assert.ok(status.roots.some((root) => root === join(dir, '.pi', 'agent', 'sessions')))
 })
 

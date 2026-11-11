@@ -26,6 +26,7 @@
  * A session title event is appended last when a title can be derived.
  */
 import { randomUUID } from 'node:crypto'
+import { isAbsolute } from 'node:path'
 
 /** Format version this build writes; matches `SESSION_FORMAT_VERSION` in the harness. */
 export const SESSION_FORMAT_VERSION = 4
@@ -225,7 +226,7 @@ export function buildSessionArtifact(input, options) {
       `foreign session has ${messages.length} messages (limit ${maxMessages}); raise maxMessages to import it`,
     )
   }
-  if (typeof input.cwd !== 'string' || !input.cwd.startsWith('/')) {
+  if (typeof input.cwd !== 'string' || !isAbsolute(input.cwd)) {
     throw new ImportBuildError('missing-cwd', 'foreign session has no absolute working directory')
   }
 

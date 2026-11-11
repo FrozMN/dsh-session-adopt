@@ -8,6 +8,7 @@
  * filesystem path.
  */
 import { realpath, stat } from 'node:fs/promises'
+import { basename, isAbsolute } from 'node:path'
 import { adapterContext } from './adapters/index.js'
 
 /** Bound on concurrent adapter metadata reads. */
@@ -88,15 +89,16 @@ function titleOf(value) {
  * @returns {Promise<object | undefined>} workspace hint.
  */
 async function workspaceHint(cwd, workspaceByPath, canonicalize) {
-  if (typeof cwd !== 'string' || !cwd.startsWith('/')) return undefined
+  if (typeof cwd !== 'string' || !isAbsolute(cwd)) return undefined
   const canonical = await canonicalize(cwd)
   if (canonical === undefined) return undefined
   const existing = workspaceByPath.get(canonical)
   if (existing !== undefined) {
     return { kind: 'existing', workspaceId: String(existing.id), title: existing.title, path: existing.path }
   }
-  const segments = canonical.split('/').filter((segment) => segment !== '')
-  return { kind: 'new', path: canonical, title: segments.at(-1) ?? canonical }
+  // `basename` understands both separators, so a Windows path yields its last
+  // segment instead of the whole drive-qualified string.
+  return { kind: 'new', path: canonical, title: basename(canonical) || canonical }
 }
 
 /**

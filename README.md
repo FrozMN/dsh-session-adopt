@@ -41,7 +41,7 @@ This plugin closes that gap at runtime:
   usual “switch back from the IDE” flow.
 - **Automatic Workspace creation** for new sessions whose canonical `cwd` has no registration.
 - **Idempotent, serialized scans**; failures are reported per session instead of aborting the scan.
-- **Cross-harness detection** of foreign session stores (`pi` shipped, adapter slots for Claude Code, Codex, Gemini CLI and OpenCode). Foreign stores are only ever read.
+- **Cross-harness detection** of foreign session stores (`pi` and `VS Code Copilot` shipped, adapter slots for Claude Code, Codex, Gemini CLI and OpenCode). Foreign stores are only ever read.
 - **Import dialog** in the sidebar footer: a window listing detected sessions with harness badge, title, cwd, message count, model and target Workspace; select several and import in one click, with per-row outcomes and English/Chinese copy.
 - **Native session synthesis**: the foreign conversation is converted into a validated DSH v4 durable session (turns, steps, tool calls/results, title) without calling a model during the import.
 - **Workspace creation and attachment**: imports land in the Workspace matching the session's canonical `cwd`; a missing Workspace is created on explicit import.
@@ -55,10 +55,11 @@ This plugin closes that gap at runtime:
 - Session persistence (the shipped JSONL backend is fine).
 - No npm dependencies; the plugin only uses Node built-ins and the Harness services listed in
   [`index.js`](index.js) (`webServer`, `connection`, `sessionPersistence`, `workspaceRegistry`, `sessions`).
-- For cross-harness import: a readable foreign session store on the same machine. The shipped adapter
-  supports pi (`~/.pi/agent/sessions`, or the `PI_CODING_AGENT_SESSION_DIR` /
-  `PI_CODING_AGENT_DIR` overrides). Other harnesses need an adapter module under
-  [`import/adapters/`](import/adapters/).
+- For cross-harness import: a readable foreign session store on the same machine. The shipped adapters
+  support pi (`~/.pi/agent/sessions`, or the `PI_CODING_AGENT_SESSION_DIR` /
+  `PI_CODING_AGENT_DIR` overrides) and GitHub Copilot Chat in VS Code (the VS Code `workspaceStorage`
+  chat stores, or the `COPILOT_USER_DATA_DIR` / `VSCODE_USER_DATA_DIR` overrides). Other harnesses need
+  an adapter module under [`import/adapters/`](import/adapters/).
 
 ## Install
 
@@ -156,9 +157,26 @@ An adapter is a dependency-free ESM module under [`import/adapters/`](import/ada
 `id`, `title`, `available(ctx)`, `listSessions(ctx)` and `readSession(ctx, key)`. `listSessions` returns
 metadata only (a scan never reads conversation content); `readSession` returns a normalized transcript
 (`user` / `assistant` / `tool` messages with `text`, `reasoning` and `tool-call` blocks) that the Host
-converts into the native session log. The shipped `pi` adapter covers pi session format v1–v3, including
-branch selection (active leaf), usage tokens and tool results; images are imported as `[image]`
-placeholders in this version. Additional adapters can be dropped in without touching the Host.
+converts into the native session log. Images are imported as `[image]` placeholders in this version.
+Additional adapters can be dropped in without touching the Host.
+
+Two adapters ship today:
+
+- **`pi`** — pi session format v1–v3, including branch selection (active leaf), usage tokens and tool
+  results. Store: `~/.pi/agent/sessions` (`PI_CODING_AGENT_SESSION_DIR`, `PI_CODING_AGENT_DIR`,
+  `PI_HOME`).
+- **`copilot`** — GitHub Copilot Chat sessions stored by VS Code. Store:
+  `<user data>/User/workspaceStorage/<workspace id>/chatSessions/`, plus the folder-less
+  `globalStorage/emptyWindowChatSessions`. The working directory of a session is the folder recorded in
+  that workspace's `workspace.json`, so imported Copilot sessions land in the same Workspace you had open
+  in VS Code. Both on-disk forms are read: the append-only `.jsonl` operation log used since
+  microsoft/vscode#286644 (VS Code ~1.109 / Insiders) — replayed with VS Code's own `kind 0/1/2/3`
+  semantics — and the legacy single-file `.json`. Prose, reasoning, tool invocations with their recorded
+  results (structured output or captured terminal output) and answered question carousels are converted;
+  progress markers, code-block URIs and undo stops are dropped. VS Code variants (`Code`, `Code -
+  Insiders`, `VSCodium`, `Code - OSS`) are discovered automatically, and `COPILOT_USER_DATA_DIR` /
+  `VSCODE_USER_DATA_DIR` can name a user-data directory explicitly (path-delimiter separated for
+  several).
 
 ## Configuration
 
@@ -295,6 +313,13 @@ Workspace are always attached, regardless of age.
 
 Cross-harness import adds its own boundaries:
 
+- **A scan replays each foreign session log.** For VS Code Copilot that is the whole append-only log, so a
+  scan of a large store costs one sequential pass over the store, and a single very long session may
+  transiently use a few hundred MB of memory. Files above 256 MB are skipped rather than replayed.
+- **Empty chat shells are not listed.** A Copilot session file created by opening the chat without
+  sending a request carries no conversation, so a scan omits it instead of offering an unimportable row.
+- **Copilot sessions from a window without a folder** (`emptyWindowChatSessions`) carry no working
+  directory, so they are listed but cannot be selected for import.
 - **Imported sessions are snapshots.** The foreign session is read once; later turns appended by the
   other harness are not picked up. Re-importing the same foreign session is idempotent (deterministic
   DSH id) and is reported as `already-imported`, so refreshing an import is a future feature.
@@ -337,7 +362,7 @@ Cross-harness import adds its own boundaries:
 | [`import/events.js`](import/events.js) | Normalized transcript → validated DSH v4 event log |
 | [`import/ids.js`](import/ids.js) | Deterministic session ids (UUIDv5) for idempotent imports |
 | [`import/registry.js`](import/registry.js) | Adapter scanning, candidate cache, Workspace hints |
-| [`import/adapters/`](import/adapters/) | Adapter contract plus the shipped `pi` adapter |
+| [`import/adapters/`](import/adapters/) | Adapter contract plus the shipped `pi` and `copilot` adapters |
 | [`client.js`](client.js) | Browser plugin: sidebar actions (sync + import dialog), locale dictionaries |
 | [`test/`](test/) | Self-contained event-builder and import-orchestrator tests |
 | [`cordis.patch.yml`](cordis.patch.yml) | Loader row and default config |
@@ -355,8 +380,11 @@ npm test        # node --test test/*.test.mjs import/adapters/*.test.mjs
 node -e "for (const f of ['package.json','locale/en.json','locale/zh.json']) JSON.parse(require('fs').readFileSync(f,'utf8'))"
 ```
 
-The `pi` adapter test reads the real `~/.pi/agent/sessions` store when present and skips gracefully
-otherwise (it is read-only).
+The adapter tests read the machine's real stores when present and skip gracefully otherwise (both are
+read-only): `~/.pi/agent/sessions` for pi, and the VS Code `workspaceStorage/.../chatSessions` stores for
+Copilot. Copilot sessions are replayed through the same `kind 0/1/2/3` operation-log semantics VS Code
+itself uses, and the real sessions present on the host are listed and read into the adapter contract
+when a store exists.
 
 To test in a live profile, install the checkout as a local bundle
 (`plugin_manager install_bundle /absolute/path/to/checkout`). A directory install is linked into the

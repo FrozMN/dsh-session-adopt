@@ -4,7 +4,7 @@
 
 一个 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件：查找**在当前桌面窗口之外**创建的会话（例如 VS Code 通过 ACP 创建的会话），并把它们归置到对应的工作区；同时在侧边栏提供手动同步入口，并为浏览器刷新会话目录，无需重启 Harness。
 
-在此之上，它还能**检测本机其他 Agent Harness 的会话**（首个适配器为 [pi](https://github.com/badlogic/pi-mono)），并把这些会话**导入为 DSH 原生会话**，按工作目录归入对应工作区。点击侧边栏的 **导入会话** 会打开选择窗口；同样的能力也通过同源 JSON 路由提供给脚本调用。
+在此之上，它还能**检测本机其他 Agent Harness 的会话**（内置 [pi](https://github.com/badlogic/pi-mono) 与 VS Code Copilot），并把这些会话**导入为 DSH 原生会话**，按工作目录归入对应工作区。点击侧边栏的 **导入会话** 会打开选择窗口；同样的能力也通过同源 JSON 路由提供给脚本调用。
 
 ```
 侧边栏
@@ -37,7 +37,7 @@ DeepSeek Harness 的持久会话日志由所有客户端、所有进程共享。
 - **回到窗口扫描**：窗口重新可见时最多每分钟触发一次，覆盖“从 IDE 切回 Harness”的常见流程。
 - **自动创建工作区**：新会话的规范 `cwd` 没有对应工作区时自动创建。
 - **串行、幂等扫描**：单个会话失败只记录错误，不中断整次扫描。
-- **跨 Harness 检测**：发现其他本机 Agent Harness 的会话存储（内置 `pi`；为 Claude Code、Codex、Gemini CLI、OpenCode 预留适配器位置）。外部存储只读，绝不修改。
+- **跨 Harness 检测**：发现其他本机 Agent Harness 的会话存储（内置 `pi` 与 `VS Code Copilot`；为 Claude Code、Codex、Gemini CLI、OpenCode 预留适配器位置）。外部存储只读，绝不修改。
 - **导入窗口**：侧边栏底部第二个入口，弹窗列出检测到的会话（Harness 徽标、标题、工作目录、消息数、模型、目标工作区），可多选一键导入，逐行显示结果，中英文文案。
 - **原生会话合成**：把外部对话转换为经过校验的 DSH v4 持久会话（turn/step、工具调用与结果、标题）；导入过程中不调用模型。
 - **创建工作区并归入**：导入会话按规范 `cwd` 归入已有工作区；显式导入时缺失的工作区会被创建。
@@ -50,7 +50,7 @@ DeepSeek Harness 的持久会话日志由所有客户端、所有进程共享。
 - 使用 Web 或 Desktop profile，并且该组合挂载了 Workspace 插件和 Web 侧边栏；
 - 启用了会话持久化（随附的 JSONL 后端即可）；
 - 插件没有 npm 依赖，只使用 Node 内置模块和 [`index.js`](index.js) 中列出的 Harness 服务：`webServer`、`connection`、`sessionPersistence`、`workspaceRegistry`、`sessions`；
-- 跨 Harness 导入还需要：本机存在可读取的外部会话存储。内置适配器支持 pi（默认 `~/.pi/agent/sessions`，可用 `PI_CODING_AGENT_SESSION_DIR` / `PI_CODING_AGENT_DIR` 覆盖）；其他 Harness 需要在 [`import/adapters/`](import/adapters/) 下提供适配器模块。
+- 跨 Harness 导入还需要：本机存在可读取的外部会话存储。内置适配器支持 pi（默认 `~/.pi/agent/sessions`，可用 `PI_CODING_AGENT_SESSION_DIR` / `PI_CODING_AGENT_DIR` 覆盖）与 VS Code 中的 GitHub Copilot Chat（VS Code `workspaceStorage` 下的聊天会话存储，可用 `COPILOT_USER_DATA_DIR` / `VSCODE_USER_DATA_DIR` 覆盖）；其他 Harness 需要在 [`import/adapters/`](import/adapters/) 下提供适配器模块。
 
 ## 安装
 
@@ -130,7 +130,12 @@ dsh plugin --profile web add https://github.com/FrozMN/dsh-session-adopt
 
 ### 适配器
 
-适配器是 [`import/adapters/`](import/adapters/) 下的零依赖 ESM 模块，导出 `id`、`title`、`available(ctx)`、`listSessions(ctx)` 与 `readSession(ctx, key)`。`listSessions` 只返回元数据（扫描阶段绝不读取对话内容）；`readSession` 返回规范化对话（`user` / `assistant` / `tool` 消息，`text`、`reasoning`、`tool-call` 内容块），由 Host 转换为原生会话日志。内置 `pi` 适配器覆盖 pi 会话格式 v1–v3，包括分支选择（取活跃叶子路径）、token 用量与工具结果；本版本中图片会降级为 `[image]` 占位文本。新增适配器无需改动 Host。
+适配器是 [`import/adapters/`](import/adapters/) 下的零依赖 ESM 模块，导出 `id`、`title`、`available(ctx)`、`listSessions(ctx)` 与 `readSession(ctx, key)`。`listSessions` 只返回元数据（扫描阶段绝不读取对话内容）；`readSession` 返回规范化对话（`user` / `assistant` / `tool` 消息，`text`、`reasoning`、`tool-call` 内容块），由 Host 转换为原生会话日志。本版本中图片会降级为 `[image]` 占位文本。新增适配器无需改动 Host。
+
+当前内置两个适配器：
+
+- **`pi`**：覆盖 pi 会话格式 v1–v3，包括分支选择（取活跃叶子路径）、token 用量与工具结果。存储位置：`~/.pi/agent/sessions`（可用 `PI_CODING_AGENT_SESSION_DIR`、`PI_CODING_AGENT_DIR`、`PI_HOME` 覆盖）。
+- **`copilot`**：VS Code 中 GitHub Copilot Chat 的会话。存储位置：`<user data>/User/workspaceStorage/<workspace id>/chatSessions/`，以及无文件夹窗口的 `globalStorage/emptyWindowChatSessions`。会话的工作目录取自该工作区 `workspace.json` 记录的文件夹，因此导入后归入你当时在 VS Code 中打开的那个工作区。两种磁盘格式都支持：microsoft/vscode#286644 之后（VS Code ~1.109 / Insiders）的追加式 `.jsonl` 操作日志——按 VS Code 自身的 `kind 0/1/2/3` 语义回放，以及旧版的单文件 `.json`。转换内容包括正文、思考过程、带记录结果的工具调用（结构化输出或捕获到的终端输出）以及已作答的提问卡片；进度标记、代码块 URI 与撤销标记会被丢弃。自动发现 `Code`、`Code - Insiders`、`VSCodium`、`Code - OSS` 等变体；也可用 `COPILOT_USER_DATA_DIR` / `VSCODE_USER_DATA_DIR` 显式指定 user data 目录（多个以路径分隔符连接）。
 
 ## 配置
 
@@ -230,6 +235,9 @@ dsh plugin --profile web add https://github.com/FrozMN/dsh-session-adopt
 
 跨 Harness 导入还有以下边界：
 
+- **扫描会回放每个外部会话日志。** 对 VS Code Copilot 来说就是整份追加式日志，因此扫描大型存储要做一次顺序遍历，单个超长会话可能瞬时占用数百 MB 内存；超过 256 MB 的文件会被跳过而不回放。
+- **空的聊天壳不会列出。** 只打开聊天面板、未发送任何请求的 Copilot 会话文件不包含对话内容，扫描会直接跳过，而不是提供一个无法导入的条目。
+- **无文件夹窗口**（`emptyWindowChatSessions`）中的 Copilot 会话没有工作目录，因此会被列出但无法选中导入。
 - **导入的是快照。** 外部会话只读取一次；之后外部 harness 追加的轮次不会同步。同一外部会话重复导入是幂等的（确定性 DSH id），会返回 `already-imported`；“刷新导入”属于后续能力。
 - **恢复（继续对话）导入会话会追加 Harness 事件。** 首次恢复会以写方式打开日志、写入恢复种子标记（未打标签的 `session/end-seed {}`）、记录当前模型/预设/权限/沙箱状态、开启下一轮，并记录当前 system prompt（`in-history` 路由追加在导入历史之后，其它路由重写受保护的首个 system 节点）。导入事件不会被改写。后续每次冷恢复可能再追加一个未打标签的 `session/end-seed {}`；这些标记无害（只有 `{ inherited: true }` 才定义 fork 切点），也不会进入模型上下文。
 - **Harness 没有删除/修复会话的 API。** 导入器会在首次 append 之前把完整产物走 Harness 恢复路径校验，并以单个批次写入；写入前的失败不会留下任何东西。一旦写入即为持久日志：若导入后来被证明不可读，无法原地修复——必须先删除该会话目录/工作区归属（或由用户工具删除会话）再重新导入，因为确定性 id 会让普通重导入按 `already-imported` 跳过。
@@ -248,7 +256,7 @@ dsh plugin --profile web add https://github.com/FrozMN/dsh-session-adopt
 | [`import/events.js`](import/events.js) | 规范化对话 → 经校验的 DSH v4 事件日志 |
 | [`import/ids.js`](import/ids.js) | 确定性会话 id（UUIDv5），支撑幂等导入 |
 | [`import/registry.js`](import/registry.js) | 适配器扫描、候选缓存、工作区提示 |
-| [`import/adapters/`](import/adapters/) | 适配器契约与内置 `pi` 适配器 |
+| [`import/adapters/`](import/adapters/) | 适配器契约与内置 `pi`、`copilot` 适配器 |
 | [`client.js`](client.js) | 浏览器插件：侧边栏动作（同步 + 导入弹窗）、语言词典 |
 | [`test/`](test/) | 事件构建与导入编排的自包含测试 |
 | [`cordis.patch.yml`](cordis.patch.yml) | Loader 行和默认配置 |
@@ -266,7 +274,7 @@ npm test        # node --test test/*.test.mjs import/adapters/*.test.mjs
 node -e "for (const f of ['package.json','locale/en.json','locale/zh.json']) JSON.parse(require('fs').readFileSync(f,'utf8'))"
 ```
 
-`pi` 适配器测试会读取真实的 `~/.pi/agent/sessions`（只读），不存在时自动跳过。
+适配器测试会读取本机真实存储（均为只读），不存在时自动跳过：pi 读取 `~/.pi/agent/sessions`，Copilot 读取 VS Code 的 `workspaceStorage/.../chatSessions`。Copilot 会话按 VS Code 自身的 `kind 0/1/2/3` 操作日志语义回放；存在存储时，本机真实会话会被列出并读入适配器契约。
 
 在真实 profile 中测试时，把本目录作为本地 bundle 安装
 （`plugin_manager install_bundle /绝对路径`）。目录安装会以链接方式装入 profile，因此修改 Host 代码后

@@ -24,7 +24,7 @@ function fixture(messages) {
     harness: 'pi',
     foreignId: 'foreign-1',
     title: 'Example session',
-    cwd: '/Users/example/project',
+    cwd: '/example/project',
     createdAt: NOW - 60_000,
     updatedAt: NOW - 1_000,
     provider: 'deepseek',
